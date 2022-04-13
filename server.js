@@ -1,8 +1,13 @@
+const express = require('express')
+const fs = require('fs')
+const morgan = require('morgan')
+const db = require("./database")
 // Require minimist module
 const args = require('minimist')(process.argv.slice(2))
 // See what is stored in the object produced by minimist
-//console.log(args)
+console.log(args)
 // Store help text 
+
 const help = (`
 server.js [options]
 
@@ -25,15 +30,17 @@ if (args.help || args.h) {
     process.exit(0)
 }
 
-const express = require('express')
-const app = express()
-const db = require("./database.js")
-const fs = require('fs')
-const morgan = require('morgan')
+const port = (args.port >= 1 && args.port <= 65535) ? args.port : 5555
+
+const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-const port = args.port || 5555;
+
+// Start server
+const server = app.listen(port, () => {
+    console.log('App is running on port %PORT%'.replace('%PORT%',port))
+})
 
 if (args.log == 'false') {
     console.log("Not creating a new access.log")
@@ -44,13 +51,6 @@ if (args.log == 'false') {
         // Set up the access logging middleware
     app.use(morgan('combined', { stream: WRITESTREAM }))
 }
-
-// Start server
-const server = app.listen(port, () => {
-    console.log('App is running on port %PORT%'.replace('%PORT%',port))
-})
-
-
 
 app.use( (req, res, next) => {
     let logdata = {
@@ -67,7 +67,7 @@ app.use( (req, res, next) => {
     }
 
     const stmt = db.prepare('INSERT INTO accesslog (remoteaddr,remoteuser,time,method,url,protocol,httpversion,status,referer,useragent) VALUES (?,?,?,?,?,?,?,?,?,?)');
-    const info = stmt.run(logdata.remoteaddr,logdata.remoteuser, logdata.time, logdata.method,logdata.url,logdata.protocol,logdata.httpversion, logdata.satus,logdata.referer, logdata.useragent)
+    const info = stmt.run(logdata.remoteaddr,logdata.remoteuser, logdata.time, logdata.method,logdata.url,logdata.protocol,logdata.httpversion, logdata.status,logdata.referer, logdata.useragent)
 
     next()
     })
