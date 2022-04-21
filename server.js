@@ -1,58 +1,48 @@
-const express = require('express')
 const fs = require('fs')
 const morgan = require('morgan')
-const db = require("./database")
-// Require minimist module
+
+const express = require('express')
+
+const app = express()
 const args = require('minimist')(process.argv.slice(2))
-// See what is stored in the object produced by minimist
-console.log(args)
-// Store help text 
 
-const help = (`
-server.js [options]
-
---port	Set the port number for the server to listen on. Must be an integer
-            between 1 and 65535.
-
---debug	If set to true, creates endlpoints /app/log/access/ which returns
-            a JSON access log from the database and /app/error which throws 
-            an error with the message "Error test successful." Defaults to 
-            false.
-
---log		If set to false, no log files are written. Defaults to true.
-            Logs are always written to database.
-
---help	Return this message and exit.
-`)
-// If --help or -h, echo help text to STDOUT and exit
+// If --help, echo help text and exit
 if (args.help || args.h) {
-    console.log(help)
+    console.log(`
+    server.js [options]
+    --port, -p	Set the port number for the server to listen on. Must be an integer
+                between 1 and 65535.
+    --debug, -d If set to true, creates endlpoints /app/log/access/ which returns
+                a JSON access log from the database and /app/error which throws 
+                an error with the message "Error test successful." Defaults to 
+                false.
+    --log		If set to false, no log files are written. Defaults to true.
+                Logs are always written to database.
+    --help, -h	Return this message and exit.
+    `)
     process.exit(0)
 }
 
-const port = (args.port >= 1 && args.port <= 65535) ? args.port : 5555
-
-const app = express();
-
+const db = require('./database.js')
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Start server
+
+const port = args.port ||  5555
+
 const server = app.listen(port, () => {
-    console.log('App is running on port %PORT%'.replace('%PORT%',port))
-})
+    console.log(`App is running on port ${port}`)
+});
 
 if (args.log == 'false') {
-    console.log("Not creating a new access.log")
+    console.log("I'm not creating shit here")
+
 } else {
-    // Use morgan for logging to files
-    // Create a write stream to append (flags: 'a') to a file
-    const WRITESTREAM = fs.createWriteStream('access.log', { flags: 'a' })
-        // Set up the access logging middleware
-    app.use(morgan('combined', { stream: WRITESTREAM }))
+    const accessLog = fs.createWriteStream('access.log', { flags: 'a' })
+    app.use(morgan('combined', { stream: accessLog }))
 }
 
-app.use( (req, res, next) => {
+app.use((req, res, next) => {
     let logdata = {
         remoteaddr: req.ip,
         remoteuser: req.user,
@@ -62,106 +52,115 @@ app.use( (req, res, next) => {
         protocol: req.protocol,
         httpversion: req.httpVersion,
         status: res.statusCode,
-        referer: req.headers['referer'],
+        referrer: req.headers['referer'],
         useragent: req.headers['user-agent']
-    }
+    };
+    const stmt = db.prepare('INSERT INTO accesslog (remoteaddr, remoteuser, time, method, url, protocol, httpversion, status, referrer, useragent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    const info = stmt.run(logdata.remoteaddr, logdata.remoteuser, logdata.time, logdata.method, logdata.url, logdata.protocol, logdata.httpversion, logdata.status, logdata.referrer, logdata.useragent)
+    next();
+})
+app.get("/app", (req, res, next) => {
+	res.status(200).send("Your API works! (200)");
+});
 
-    const stmt = db.prepare('INSERT INTO accesslog (remoteaddr,remoteuser,time,method,url,protocol,httpversion,status,referer,useragent) VALUES (?,?,?,?,?,?,?,?,?,?)');
-    const info = stmt.run(logdata.remoteaddr,logdata.remoteuser, logdata.time, logdata.method,logdata.url,logdata.protocol,logdata.httpversion, logdata.status,logdata.referer, logdata.useragent)
-
-    next()
+if (args.debug || args.d) {
+    app.get('/app/log/access/', (req, res, next) => {
+        const stmt = db.prepare("SELECT * FROM accesslog").all();
+	    res.status(200).json(stmt);
     })
 
-if (args.debug == 'true') {
-    app.get("/app/log/access", (req, res) => {
-        try {
-            const stmt = db.prepare('SELECT * FROM accesslog').all()
-            res.status(200).json(stmt)
-        } catch (e) {
-            console.error(e)
-        }
-
-})
-    app.get('/app/error', (req, res) => {
-        throw new Error("Error test successful.")
-})
+    app.get('/app/error/', (req, res, next) => {
+        throw new Error('Error test works.')
+    })
 }
 
-// coin functions
-function coinFlip() {
-    var ran = Math.random();
-    if (ran < 0.5) {
-        return "heads";
-    }
-    else {
-        return "tails";
-    }
-}
+app.use(function(req, res) {
+    res.status(404).send("404 NOT FOUND")
+    res.type("text/plain")  
+})
+
+
 
 function coinFlips(flips) {
-    if (flips < 0 || flips == '' || flips == null) {
-        console.log('Error: no input');
-    } else {
-        var list = [];
-        for(var i = 0; i < flips; i++) {
-        list.push(coinFlip());
-        }
-        return list;
-        }
-}
-
-function countFlips(array) {
-    var heads = 0;
-    var tails = 0;
-    for(var i = 0; array.length > i; i++) {
-        if (array[i] == "heads") {
-            heads++;
-        }
-    else {
-            tails++
-        }
-}
-return {'heads' : heads, 'tails' : tails}
-}
-
-
-function flipACoin(call) {
-    var flip = coinFlip();
-    var result = ""
-    if (call == flip) {
-        result = "win"
+    var coinArray = new Array()
+    for (let i=0; i < flips; i++) {
+      coinArray[i] = coinFlip()
     }
-    else {
-        result = "lose"
+  
+    return coinArray 
+  }
+  
+  function coinFlip() {
+      let randomNum = Math.random()
+      if (randomNum < .5){
+        return "tails"
+      } else{
+        return "heads"
+      }
+    }
+  
+    
+  
+    function countFlips(myArray) {
+      var headCount = 0
+      var tailCount = 0
+      for (let i=0; i<myArray.length; i++) {
+        if (myArray[i] == 'heads') {
+          headCount = headCount + 1
+        } else {
+          tailCount = tailCount + 1
         }
-    return {"call": call, "flip": flip, "result": result};
-}
+      }
+      /*if (headCount ==0) {
+        return "{ tails: " + tailCount + " }"
+      }
+      if (tailCount ==0) {
+        return "{ heads: " + headCount + " }"
+      }*/
+      let results = {
+        tails: tailCount,
+        heads: headCount
+      }
+      return results
+    }
+  
 
-// API calls
-
-app.get('/app/flip/', (req, res) => {
-    const flip = coinFlip()
-    res.status(200).json({"flip" : flip})
-  });
   
-app.get('/app/flips/:number', (req, res) => {
-    let flips = coinFlips(req.params.number)
-    let final = countFlips(flips)
-    res.status(200).json({ 'raw' : flips, 'summary' : final})
-});
+  app.get('/app/flip', (req, res)  => {
+      res.status(200).json({'flip' : coinFlip()})
+  })
   
-app.get('/app/flip/call/tails', (req, res) => {
-    const resultFlip = flipACoin('tails')
-    res.status(200).json({ 'call' : resultFlip.call, 'flip': resultFlip.flip, 'result': resultFlip.result})
-});
+  // need to return game as from screenshot
+  app.get('/app/flip/call/heads', (req, res)  => {
+    var flip = coinFlip()
+    if (flip == "heads") {
+      result = "win"
+    } else {
+      result = "lose"
+    }
+    res.status(200).json({'call':'heads', 'flip':flip, 'result':result})
+  })
+  // test
+  app.get('/app/flip/call/tails', (req, res)  => {
+    var flip = coinFlip()
+    if (flip == "tails") {
+      result = "win"
+    } else {
+      result = "lose"
+    }
+    res.status(200).json({'call':'tails', 'flip':flip, 'result':result})
+  })
+  // making sure I committed right
   
-app.get('/app/flip/call/heads', (req, res) => {
-    const resultFlip = flipACoin('heads')
-    res.status(200).json({ 'call' : resultFlip.call, 'flip': resultFlip.flip, 'result': resultFlip.result})
-});
-
-// Default response for any other request
-app.use(function(req, res){
-    res.status(404).send('404 NOT FOUND')
-});
   
+  
+  
+  app.get('/app/echo/:repeat', (req, res) => {
+      res.status(200).json({'message': req.params.repeat})
+  })
+  
+  app.get('/app/flips/:number', (req, res) => {
+    var coinArray = coinFlips(req.params.number)
+    var mySummary = countFlips(coinArray)
+    res.status(200).json({'raw': coinArray, "summary": mySummary})
+  })
